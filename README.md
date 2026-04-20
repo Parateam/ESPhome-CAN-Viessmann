@@ -23,7 +23,7 @@ The ESP32 has an integrated CAN controller and therefore doesn’t necessarily n
 
 The TJA1050 is powered with 5V, the input works with 3.3V level, but the RX to ESP32 MUST have 3.3V. So use 2 resistors (4.7kΩ and 10kΩ for an Voltage divider to 3.3V.
 
-I use an Olimex POE ISO board with ethernet and POE power. 
+I use an Olimex POE ISO board with ethernet and POE power. I have no performance issues.
 
 The ESP32 has a own WEB-interface. So it is possible to have it stand-alone without HOMEASSISTANT to show and control!
 <img width="924" height="368" alt="WP_WEB_CAN" src="https://github.com/user-attachments/assets/0086313d-84c5-4dcc-9331-f04f6b55698f" />
