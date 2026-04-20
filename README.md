@@ -30,7 +30,7 @@ The ESP32 has a own WEB-interface. So it is possible to have it stand-alone with
 
 
 A little OT: In my situation, the same board has also:
-- I2C connection to the LYNX DISTRIBUTOR from VICTRON to monitor the status of the fuses
-- RS232 connection the the console port of my PYLONTECH US5000 batterys
+- I2C connection to the VICTRON LYNX DISTRIBUTOR to monitor the status of the 48V fuses
+- RS232 connection to the console port of my PYLONTECH US5000 batterys
 
 All theese sensors are also avalible in HOMEASSISTANT.
