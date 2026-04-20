@@ -1,0 +1,338 @@
+###################### PINS ######################
+# ESP32         TJA1050 CAN
+#
+# 5V            VCC
+# GND           GND
+# 33            RX (2xR auf 3V3)
+# 32            TX
+###################### PINS ######################
+
+esphome:
+  name: "keller-poe"
+  friendly_name: "keller-poe"
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+logger:
+web_server:  
+api:
+  encryption:
+    key: "XXX"
+ota:
+  - platform: esphome
+    password: "XXX"
+
+ethernet:
+  type: LAN8720
+  mdc_pin: GPIO23
+  mdio_pin: GPIO18
+  clk:
+    mode: CLK_OUT
+    pin: 17  
+  phy_addr: 0
+  power_pin: GPIO12    
+
+globals:
+  # DIDs die eingelesen und ständig aktualisiert werden
+  - id: dids
+    type: std::vector<std::vector<std::string>>
+    initial_value: '{
+      {"396", "DomesticHotWaterTemperatureSetpoint", {0x03, 0x22, 0x01, 0x8C, 0x00, 0x00, 0x00, 0x00}},
+      {"424", "MixerOneCircuitRoomTemperatureSetpoint", {0x03, 0x22, 0x01, 0xA8, 0x00, 0x00, 0x00, 0x00}},
+      {"1415", "MixerOneCircuitOperationState", {0x03, 0x22, 0x05, 0x87, 0x00, 0x00, 0x00, 0x00}},
+      {"268", "FlowTemperatureSensor",       {0x03, 0x22, 0x01, 0x0C, 0x00, 0x00, 0x00, 0x00}},
+      {"269", "ReturnTemperatureSensor", {0x03, 0x22, 0x01, 0x0D, 0x00, 0x00, 0x00, 0x00}},
+      {"271", "DomesticHotWaterSensor", {0x03, 0x22, 0x01, 0x0F, 0x00, 0x00, 0x00, 0x00}},
+      {"274", "OutdoorAirTemperatureSensor", {0x03, 0x22, 0x01, 0x12, 0x00, 0x00, 0x00, 0x00}},
+      {"1043", "AllengraSensor", {0x03, 0x22, 0x04, 0x13, 0x00, 0x00, 0x00, 0x00}},
+      {"2496", "CurrentThermalCapacitySystem", {0x03, 0x22, 0x09, 0xC0, 0x00, 0x00, 0x00, 0x00}},
+      {"2351", "HeatPumpCompressor", {0x03, 0x22, 0x09, 0x2F, 0x00, 0x00, 0x00, 0x00}},
+      {"318", "WaterPressureSensor", {0x03, 0x22, 0x01, 0x3E, 0x00, 0x00, 0x00, 0x00}},
+      }'
+  # Position beim Loop der Abfrage (globals: dids)
+  - id: loop_dids
+    type: int
+    restore_value: no
+    initial_value: '0' 
+  # Heizung AN/AUS sperren bis erster Wert abgefragt
+  - id: lock_va1415
+    type: int
+    initial_value: '1'
+  # Heizung Tempslider sperren bis erster Wert abgefragt
+  - id: lock_va424
+    type: int
+    initial_value: '1'
+  # Warmwasser Tempslider sperren bis erster Wert abgefragt
+  - id: lock_va396
+    type: int
+    initial_value: '1'
+  # Abfrage DIDs sperren während write DIDs
+  - id: lock_read
+    type: int
+    initial_value: '0'
+
+canbus:
+  # Viessmann 252A CANbus über TJA1050 Treiber-IC
+  - platform: esp32_can
+    id: cb
+    tx_pin: 32
+    rx_pin: 33
+    can_id: 680
+    bit_rate: 250kbps
+    on_frame:
+     # Filter Canbus ID 690, nur Antworten Steuergerät Heizung 252A 
+      - can_id: 0x690 
+        then:
+          # Daten den Entitäten zuweisen, bei schreibbaren DIDs die Sperre aufheben
+          - lambda: |-
+              ESP_LOGD("CAN", "XXXXXXXXXXXXXXXX empfangen: 0x%02X %02X %02X %02X %02X %02X %02X %02X", x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7]);
+              if(x[0]==0x10 and x[1]==0x0C and x[2]==0x62) {  
+                int did = int16_t((x[4])+((x[3])<<8));
+                switch(did) {
+                  case 268:
+                    id(va268).publish_state(float(int16_t((x[5])+((x[6])<<8)))*0.1);
+                    break;
+                  case 269:
+                    id(va269).publish_state(float(int16_t((x[5])+((x[6])<<8)))*0.1);
+                    break;
+                  case 271:
+                    id(va271).publish_state(float(int16_t((x[5])+((x[6])<<8)))*0.1);
+                    break;
+                  case 274:
+                    id(va274).publish_state(float(int16_t((x[5])+((x[6])<<8)))*0.1);
+                    break;
+                  case 318:
+                    id(va318).publish_state(float(int16_t((x[5])+((x[6])<<8)))*0.1);
+                    break;
+                  case 424: 
+                    id(va424).publish_state(float(int16_t((x[7])+((x[6])<<8)))*0.1);
+                    id(lock_va424) = 0;
+                    break;
+                }
+              }
+              if(x[0]==0x10 and x[1]==0x08 and x[2]==0x62) {
+                int did = int16_t((x[4])+((x[3])<<8));
+                switch(did) {
+                    case 1043:
+                      //id(va1043).publish_state(float(int16_t((x[7])+((x[6])<<8)))*0.1);
+                      id(va1043).publish_state(float((x[5])+((x[6])<<8))*0.1);
+                      break;
+                }
+              }
+              if(x[0]==0x07 and x[1]==0x62) {
+                int did = int16_t((x[3])+((x[2])<<8));
+                switch(did) {
+                    case 2496:
+                      id(va2496).publish_state(float(int16_t((x[4])+((x[5])<<8))));
+                      break;
+                }
+              }
+              if(x[0]==0x05 and x[1]==0x62) {
+                int did = int16_t((x[3])+((x[2])<<8));
+                switch(did) {
+                    case 2351:
+                      if(x[4]==0x01) {id(va2351).publish_state(true);}  
+                      if(x[4]==0x00) {id(va2351).publish_state(false);}
+                      break;
+                    case 1415:
+                      if(x[4]==0x01) {id(va1415).publish_state(true);}
+                      if(x[4]==0x00) {id(va1415).publish_state(false);}
+                      id(lock_va1415) = 0; 
+                      break;
+                    case 396:
+                      id(va396).publish_state(float(int16_t((x[4])+((x[5])<<8)))*0.1);
+                      id(lock_va396) = 0;
+                      break;
+                }
+              }
+
+interval:
+  # 1s Abfrage DIDs, wenn nicht ein WRITE aktiv ist
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: 'return id(lock_read) == 0;'
+          then:
+            - lambda: |-
+                  int i = id(loop_dids);
+                  std::vector< uint8_t > data0{ id(dids)[i][2][0], id(dids)[i][2][1], id(dids)[i][2][2], id(dids)[i][2][3], id(dids)[i][2][4], id(dids)[i][2][5], id(dids)[i][2][6], id(dids)[i][2][7] };
+                  id(cb)->send_data(0x680, 0, data0);
+                  ESP_LOGD("deb", "gesendet: 0x%02X %02X %02X %02X %02X %02X %02X %02X", id(dids)[i][2][0], id(dids)[i][2][1], id(dids)[i][2][2], id(dids)[i][2][3], id(dids)[i][2][4], id(dids)[i][2][5], id(dids)[i][2][6], id(dids)[i][2][7]);
+                  if ( i < size(id(dids))-1) { id(loop_dids) = i + 1;}
+                    else { id(loop_dids) = 0; }
+sensor:
+  # Vitocal 252A Sensoren
+  - platform: template
+    name: "252A Vorlauf"
+    id: va268
+    unit_of_measurement: °C
+    device_class: temperature
+    state_class: "measurement"
+    accuracy_decimals: 1
+  - platform: template
+    name: "252A Rücklauf"
+    id: va269
+    unit_of_measurement: °C
+    device_class: temperature
+    state_class: "measurement"
+    accuracy_decimals: 1
+  - platform: template
+    name: "252A Warmwasser aktuell"
+    id: va271
+    unit_of_measurement: °C
+    device_class: temperature
+    state_class: "measurement"
+    accuracy_decimals: 1
+  - platform: template
+    name: "252A Aussentemperatur"
+    id: va274
+    unit_of_measurement: °C
+    device_class: temperature
+    state_class: "measurement"
+    accuracy_decimals: 1
+  - platform: template
+    name: "252A Anlagendruck"
+    id: va318
+    unit_of_measurement: Bar
+    device_class: pressure
+    state_class: "measurement"
+    accuracy_decimals: 1
+  - platform: template
+    name: "252A Volumenstrom"
+    id: va1043
+    unit_of_measurement: "l/h" 
+    device_class: volume_flow_rate
+    state_class: "measurement"
+    accuracy_decimals: 0
+  - platform: template
+    name: "252A Thermische Leistung"
+    id: va2496
+    unit_of_measurement: W 
+    device_class: energy
+    state_class: "measurement"
+    accuracy_decimals: 0
+
+binary_sensor:
+  # Vitocal 252A Binary_Sensor  
+  - platform: template
+    name: "252A Kompressor aktiv"
+    id: va2351
+
+switch:
+  # Vitocal 252A Heizbetrieb AN/AUS 
+  - platform: template
+    name: "252A Heizbetrieb"
+    id: va1415
+    turn_on_action:
+      then:
+        - if:
+            condition:
+              lambda: 'return (id(lock_va1415) == 0);'
+            then:
+              - lambda: id(lock_read) = 1;
+              - delay: 1s
+              - lambda: id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x05, 0x87, 0x01, 0x02, 0x00, 0x00});           
+              - delay: 2s
+              - lambda: id(lock_read) = 0;
+    turn_off_action: 
+      then:
+        - if:
+            condition:
+              lambda: 'return id(lock_va1415) == 0;'
+            then:
+              - lambda: id(lock_read) = 1;
+              - delay: 1s
+              - lambda: id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x05, 0x87, 0x00, 0x00, 0x00, 0x00});
+              - delay: 2s
+              - lambda: id(lock_read) = 0;
+
+number:
+  # Vitocal 252A Warmwasser Solltemperatur did396
+  - platform: template
+    name: '252A Warmwasser Soll'
+    id: va396
+    unit_of_measurement: °C
+    device_class: temperature
+    step: 1
+    mode: slider
+    max_value: 60
+    min_value: 40
+    initial_value: 50
+    optimistic: true
+    set_action: 
+      then:
+        - if:
+            condition:
+              lambda: 'return (id(lock_va396) == 0);'
+            then:
+              - lambda: id(lock_read) = 1;
+              - delay: 1s
+              - lambda: |-
+                  if (id(va396).state == 40) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0x90, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 41) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0x9A, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 42) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0xA4, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 43) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0xAE, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 44) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0xB8, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 45) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0xC2, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 46) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0xCC, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 47) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0xD6, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 48) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0xE0, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 49) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0xEA, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 50) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0xF4, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 51) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0xFE, 0x01, 0x00, 0x00});}
+                  if (id(va396).state == 52) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0x08, 0x02, 0x00, 0x00});}
+                  if (id(va396).state == 53) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0x12, 0x02, 0x00, 0x00});}
+                  if (id(va396).state == 54) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0x1C, 0x02, 0x00, 0x00});}
+                  if (id(va396).state == 55) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0x26, 0x02, 0x00, 0x00});}
+                  if (id(va396).state == 56) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0x30, 0x02, 0x00, 0x00});}
+                  if (id(va396).state == 57) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0x3A, 0x02, 0x00, 0x00});}
+                  if (id(va396).state == 58) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0x44, 0x02, 0x00, 0x00});}
+                  if (id(va396).state == 59) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0x4E, 0x02, 0x00, 0x00});}
+                  if (id(va396).state == 60) {id(cb)->send_data(0x680, 0, {0x05, 0x2E, 0x01, 0x8C, 0x58, 0x02, 0x00, 0x00});}
+              - delay: 2s
+              - lambda: id(lock_read) = 0;
+  
+  # Vitocal 252A Raumtemperatur "normal" did424
+  - platform: template
+    name: '252A Raumtemperatur Soll'
+    id: va424
+    unit_of_measurement: °C
+    device_class: temperature
+    step: 1
+    mode: slider
+    max_value: 25
+    min_value: 12
+    initial_value: 21
+    optimistic: true
+    set_action:      
+      then:
+        - if:
+            condition:
+              lambda: 'return (id(lock_va424) == 0);'
+            then:
+              # Heizkreis 1 auf comfort: 22, normal: 21, reduced: 20 setzen
+              - lambda: id(lock_read) = 1;
+              - delay: 1s
+              # 1. Frame schreiben
+              - lambda: |-
+                  if (id(va424).state == 12) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0x78});}
+                  if (id(va424).state == 13) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0x82});}
+                  if (id(va424).state == 14) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0x8C});}
+                  if (id(va424).state == 15) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0x96});}
+                  if (id(va424).state == 16) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0xA0});}
+                  if (id(va424).state == 17) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0xAA});}
+                  if (id(va424).state == 18) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0xB4});}
+                  if (id(va424).state == 19) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0xBE});}
+                  if (id(va424).state == 20) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0xC8});}
+                  if (id(va424).state == 21) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0xD2});}
+                  if (id(va424).state == 22) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0xDC});}
+                  if (id(va424).state == 23) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0xE6});}
+                  if (id(va424).state == 24) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0xF0});}
+                  if (id(va424).state == 25) {id(cb)->send_data(0x680, 0, {0x10, 0x0C, 0x2E, 0x01, 0xA8, 0xDC, 0x00, 0xFA});}
+              # 2. Frame schreiben nach 300ms für Antwort FlowControl; dieser ist immer gleich wenn nur der Wert für "normal" geändert wird
+              - delay: 300ms
+              - lambda: id(cb)->send_data(0x680, 0, {0x21, 0x00, 0xC8, 0x00, 0x00, 0x00, 0x00, 0x00});
+              - delay: 2s
+              - lambda: id(lock_read) = 0;
