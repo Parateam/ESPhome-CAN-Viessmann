@@ -1,12 +1,12 @@
 # ESPhome-CAN-Viessmann
 Integrates Viessmann Heatpump 252-A direct with CANBUS and ESPHOME to the HOMEASSISTANT dashboard 
 
-May thanks for the inspiration and support. This solutuion is made with the help of:
+Many thanks for the inspiration and support. This solutuion is made with the help of:
 
 - https://github.com/open3e/open3e
 - https://github.com/maromme/esphome-vitoair
 
-In 2024, i've installed a Viessman heatpump 252-A. I use HOMEASSISTANT und ESPHOME on an TRUENAS docker. I was not satisfield with the Viessmann Cloud and WLAN connection. I want my data inside my home, and control it via "VPN to home", not via cloud-services. 
+In 2024, i've installed a Viessman heatpump 252-A. I use HOMEASSISTANT und ESPHOME on a TRUENAS in DOCKER. I was not satisfield with the Viessmann Cloud and WLAN connection. I want my data inside my home, and control it via "VPN to home", not via cloud-services. 
 
 This is my first project with CAN, and it works now since March 2026 perfect for me. I can use it fully integrated to HOMEASSISTANT with all possibilities of control and automations.
 
@@ -21,5 +21,15 @@ Hardware Setup:
 
 The ESP32 has an integrated CAN controller and therefore doesn’t necessarily need an external controller. So, you only need the TJA1050 driver. 
 
-The TJA1050 is powered with 5V, the input works with 3.3V level, but the RX to ESP32 MUST have 3.3V. So use 2 resistors (4.7kΩ and 10kΩ for an Voltage divider:to 3.3V.
+The TJA1050 is powered with 5V, the input works with 3.3V level, but the RX to ESP32 MUST have 3.3V. So use 2 resistors (4.7kΩ and 10kΩ for an Voltage divider to 3.3V.
 
+I use an Olimex POE ISO board with ethernet and POE power. 
+
+The ESP32 has a own WEB-interface. So it is possible to have it stand-alone without HOMEASSISTANT to show and control!
+<img width="924" height="368" alt="WP_WEB_CAN" src="https://github.com/user-attachments/assets/0086313d-84c5-4dcc-9331-f04f6b55698f" />
+
+
+A little OT: In my situation, the same board has also:
+- I2C connection to the LYNX DISTRIBUTOR from VICTRON to monitor the status of the fuses
+- RS232 connection the the console port of my PYLONTECH US5000 batterys
+All theese sensors are also avalible in HOMEASSISTANT.
