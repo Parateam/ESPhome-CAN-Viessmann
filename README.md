@@ -21,7 +21,7 @@ Hardware Setup:
 
 The ESP32 has an integrated CAN controller and therefore doesn’t necessarily need an external controller. So, you only need the TJA1050 driver. 
 
-The TJA1050 is powered with 5V and have 3.3V compatoble inputs. But he output of the TJA1050 sends with 5V. This voltage destroys the input pin of the ESP32. So use 2 resistors (4.7kΩ and 10kΩ for an Voltage divider to 3.3V.
+The TJA1050 is powered with 5V and have 3.3V compatible inputs. But he output of the TJA1050 sends with 5V. This voltage destroys the input pin of the ESP32. So use 2 resistors (4.7kΩ and 10kΩ for an Voltage divider to 3.3V.
 
 I use an Olimex POE ISO board with ethernet and POE power. I have no performance issues.
 
